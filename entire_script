@@ -738,7 +738,8 @@ library(dada2); packageVersion('dada2')
 library(beepr) # if you want it to beep at you when it is done running
 
 # Be sure to have a taxonomy database file downloaded from here: https://benjjneb.github.io/dada2/training.html. 
-# The Silva file shown below is used for 16S rRNA (prokaryotes) and nicely formatted versions can be downloaded from the DADA2 website, which also contains some (18S) eukaryotic versions.  Let me know if you need a custom one for your dataset.
+# The UNITE file (https://unite.ut.ee/repository.php) shown below is used for Fungal ITS (eukaryotes) and nicely formatted versions can be downloaded from the DADA2 website.
+# General FASTA release https://doi.org/10.15156/BIO/2938067
 
 #reload the seqtab.nochim as needed
 seqtab.nochim <- readRDS('C:/Users/msy12/OneDrive/Documents/UMaine/UMaine_2023/Fall_2023/AVS_554/seqtab_cow.rds')
@@ -846,13 +847,14 @@ sort(rowSums(otu_table(tax_clean)))
 # number of samples with <5000 27
 
 clean.rar <- rarefy_even_depth(tax_clean, 
-                                     sample.size=4000, # CHANGE ME to the sequences/sample you want. 5-10k is a good amount, more is better
+                                     sample.size=100, # CHANGE ME to the sequences/sample you want. 5-10k is a good amount, more is better
                                      replace=FALSE, #sampling with or without replacement
                                      trimOTUs=TRUE, #remove SVs left empty (called OTUs here but really they are SVs) 
                                      rngseed=711, 
                                      verbose=TRUE)
 
-# 22 samples and 420 SVs were removed
+# FIRST PASS 22 samples and 420 SVs were removed
+# SECOND PASS 7 samples and 700 OTUS were removed 
 # Save your cleaned, rarefied phyloseq object  
 saveRDS(clean.rar, 'clean_rarefied_phyloseq_object.RDS')
 
@@ -899,7 +901,7 @@ plot_richness(clean.rar,
   #theme(axis.text.x=element_blank()) + #example, get rid of x axis labels
   geom_violin(trim=TRUE, aes(fill=Diet)) + #optional. CHANGE ME, A is whatever factor to color violins
   geom_boxplot(width = 0.1, aes(group=Location)) + #optional. CHANGE ME, A is whatever factor to group boxplots
-  facet_grid(space="free") +
+  facet_grid(~Diet*Treatment) +
   # theme(legend.position = "none") + #use to get rid of your legend
   ylab("Observed SVs)") +
   xlab("Location") 
@@ -982,6 +984,7 @@ clean.rar.sd = as.data.frame(clean.rar.sd)
 clean.rar.rich.df <- cbind(clean.rar.rich, clean.rar.even, clean.rar.sd)
 
 dim(clean.rar.rich.df)
+write.csv(clean.rar.rich.df, 'clean_rar_rich_df.csv')
 
 # make a graph using that dataframe. this is a generic example, you will want to personalize this.
 ggplot(data=clean.rar.rich.df, aes(x=Treatment, y=Observed)) + 
@@ -1022,7 +1025,7 @@ faith <- estimate_pd(clean.rar)
 library(asbio)
 BiocManager::install("microbiome") 
 library(microbiome)
-EX_ps_clean.rar.even_SV <- evenness(otu_table(EX_ps_clean.rar))
+clean.rar.even_SV <- evenness(otu_table(EX_ps_clean.rar))
 
 # measure evenness for each sample
 clean.rar.even <- clean.rar.rich$Shannon/log(clean.rar.rich$Observed)
@@ -1034,6 +1037,7 @@ clean.rar.sd = as.data.frame(clean.rar.sd)
 clean.rar.rich.df <- cbind(clean.rar.rich, clean.rar.even, clean.rar.sd)
 
 dim(clean.rar.rich.df)
+write.csv(clean.rar.rich.df, 'clean_rar_rich_df.csv')
 
 # make a histogram to look at the shape of the data (bell curve? skew?). You can save this graph for your own benefit if you want.
 # can't really tell skew or shape for my data
@@ -1045,9 +1049,14 @@ hist(clean.rar.rich.df$clean.rar.even)
 #install.packages("PerformanceAnalytics")
 library(PerformanceAnalytics)
 kurtosis(clean.rar.rich.df$Observed)
+kurtosis(clean.rar.rich.df$Shannon)
+kurtosis(clean.rar.rich.df$clean.rar.even)
+
 # example value output is 0.0006177001, looking for whether +/- and if a large/small number
-# -1.334161
+# FIRST PASS -1.334161
+# SECOND PASS 1.19493
 # negative: skewed left, light tailed distribution
+# positive: skewed right, light tailed distribution
 # number less than 3 indicates a light tailed distribution
 
 head(clean.rar.rich.df)
@@ -1055,13 +1064,15 @@ head(clean.rar.rich.df)
 #check the distribution of your data, which will change your approach
 shapiro.test(clean.rar.rich.df$Shannon)
 # W = 0.86211, p-value = 0.1581: my shannon diversity metric is normally distributed (p-value > 0.05 reveals that the distribution of the data are not significantly different from normal distribution)
+# SECOND PASS W = 0.97525, p-value = 0.828
 
 shapiro.test(clean.rar.rich.df$Observed)
 # W = 0.91054, p-value = 0.3996, my observed data are normal. : p-value > 0.05 reveals that the distribution of the data are not significantly different from normal distribution
+# SECOND PASS W = 0.93611, p-value = 0.1644
 
 shapiro.test(clean.rar.rich.df$clean.rar.even)
 # W = 0.96748, p-value = 0.8798,  normally distributed. : p-value > 0.05 reveals that the distribution of the data are not significantly different from normal distribution
-
+# SECOND PASS W = 0.98065, p-value = 0.9258 
 
 
 ## If your alpha diversity is normally distributed (parametric)-----------------
@@ -1102,12 +1113,25 @@ wilcox.test(y ~ A, data=EX_ps_clean.rar.rich.df)
 # pick your anova model based on your study design: https://www.statmethods.net/stats/anova.html. Replace "y" with the alpha diversity measure you want, such as observed, evvenness, shannon, etc.
 # Replace "A and B" with the factors you want from your own data, and and replace x with numerical data
 #------------------------------------------------------------------------------#
+# reloadclean.rar
+clean.rar <-readRDS('clean_rarefied_phyloseq_object.RDS') 
+
 # One Way Anova (Completely Randomized Design)
-fit <- aov(Observed ~ Diet, data=clean.rar.rich.df)
+diet <- aov(Observed ~ Diet, data=clean.rar.rich.df)
+
+summary(diet)
+
+treatment <- aov(Observed ~ Treatment, data=clean.rar.rich.df)
+
+summary(treatment)
+
+location <- aov(Observed ~ Location, data=clean.rar.rich.df)
+
+summary(location)
 
 # one way ANOVA
 example1 <- lm(Observed ~ Diet, data=clean.rar.rich.df)
-example2 <- lm(Observed ~ Location, data=clean.rar.rich.df)
+example2 <- lm(Observed ~ Treatment, data=clean.rar.rich.df)
 
 #which is model better? Find the AIC value
 anova(example1,example2) 
@@ -1123,7 +1147,14 @@ summary(aov(Observed ~ Diet * Location, data=clean.rar.rich.df))
 #------------------------------------------------------------------------------#
 
 # Two Way Factorial Design
-fit <- aov(Observed ~ Diet*Location, data=clean.rar.rich.df) 
+two_way <- aov(Observed ~ Diet*Treatment, data=clean.rar.rich.df) 
+
+summary(two_way)
+
+# Three Way Factorial Design
+three_way <- aov(Observed ~ Diet*Treatment*Location, data=clean.rar.rich.df)
+
+summary(three_way)
 
 # One Within Factor
 fit <- aov(y~A+Error(Subject/A),data=EX_ps_clean.rar.rich.df) #Subject would be a Factor in your metadata, y is the value of interest, A is the Factor of interest
@@ -1131,6 +1162,8 @@ fit <- aov(y~A+Error(Subject/A),data=EX_ps_clean.rar.rich.df) #Subject would be 
 # Two Within Factors W1 W2, Two Between Factors B1 B2
 fit <- aov(y~(W1*W2*B1*B2)+Error(Subject/(W1*W2))+(B1*B2),
            data=EX_ps_clean.rar.rich.df)
+
+summary(fit)
 
 #------------------------------------------------------------------------------#
 
@@ -1161,7 +1194,7 @@ plot_heatmap(clean.rar)
 # example from class
 clean.rar.glom = tax_glom(clean.rar, "Family")
 
-plot_heatmap(clean.rar, fill="Family") +   facet_grid(~Week, space="free", scales="free") + theme(legend.position = "bottom") #, axis.text.x = element_blank()) 
+plot_heatmap(clean.rar, fill="Family") + facet_grid(~Diet, space="free", scales="free") + theme(legend.position = "bottom") #, axis.text.x = element_blank()) 
 
 #example from class, but looks like trash without a lot of fancying up
 heatmap(otu_table(clean.rar))
@@ -1172,6 +1205,7 @@ heatmap(otu_table(clean.rar))
 library(RColorBrewer)
 library(corrplot)
 
+clean.rar <-readRDS('clean_rarefied_phyloseq_object.RDS') 
 
 # corrplot requires one dataframe of metadata and/or seqtab data.  Any columns in the dataframe will be correlated against all others.  Too many columns makes the graph unreadable, try to keep it to <50.
 
@@ -1204,7 +1238,7 @@ names(clean.rar.corr.df)[names(clean.rar.corr.df) == "clean.rar.even"] <- "Evenn
 head(clean.rar.corr.df)
 
 # for example, drop a column with factorial data
-clean.rar.corr.df <- subset(clean.rar.corr.df, select = -c(Treatment, Diet, Sample_ID, ICTERIC_INDEX, LIPEMIC_INDEX))
+clean.rar.corr.df <- subset(clean.rar.corr.df, select = -c(Treatment, Diet, Location, All))
 
 # check header to make sure it looks good
 head(clean.rar.corr.df)
@@ -1223,9 +1257,9 @@ clean.rar.corr.df <- sapply(clean.rar.corr.df, as.numeric)
 
 
 # run correlations
-ex_corr_calc <- cor(clean.rar.corr.df, 
+corr_calc <- cor(clean.rar.corr.df, 
                     use="complete.obs", # use=Specifies the handling of missing data. Options are all.obs (assumes no missing data - missing data will produce an error), complete.obs (listwise deletion), and pairwise.complete.obs (pairwise deletion)
-                    method="spearman") # correlation method=pearson, spearman, or kendall
+                    method="pearson") # correlation method=pearson, spearman, or kendall
 
 ### Note, if you have too few samples, you may receive an error about too few observations. You may ignore the error message, or remove than column
 
@@ -1255,7 +1289,9 @@ res2 <- cor.mtest(clean.rar.corr.df,0.99)
 
 
 ## plot only those correlations with a significant p-value <0.05, using hierarchical clustering
-corrplot(ex_corr_calc, 
+corrplot(cor(clean.rar.corr.df)) # USED FOR MANUSCRIPT
+
+corrplot(corr_calc, 
          type="lower", #shape of the plot itself: full, upper, lower
          method="circle", #shape of the data: circle, square, ellipse, number, shade, color, pie 
          order="hclust", #how to cluster samples: AOE, hclust, FPC, alphabet, or leave blank
@@ -1360,7 +1396,7 @@ plot_core(plot.gen,
           plot.type = "heatmap", 
           prevalences = prevalences, 
           detections = detections, min.prevalence = .5) + #CHANGE min prevalence
-  xlab("Detection Threshold (Relative Abundance (%))") + ylab("Bacterial SVs") +
+  xlab("Detection Threshold (Relative Abundance (%))") + ylab("Fungal SVs") +
   theme_minimal() + scale_fill_viridis()
 
 
@@ -1425,7 +1461,7 @@ sigtab = cbind(as(sigtab, "data.frame"), as(tax_table(clean.rar)[rownames(sigtab
 head(sigtab)
 
 dim(sigtab)
-#CHANGE ME number of SVs that were different between them
+#CHANGE ME 13 number of SVs that were different between them
 
 
 # calculate log changes and set
@@ -1456,7 +1492,7 @@ sigtab$Genus = ifelse(is.na(sigtab$Genus), paste(sigtab$Family),paste(sigtab$Gen
 
 
 
-library("ggplot2")
+library(ggplot2)
 
 ## graph differential abundance
 ggplot(sigtab, aes(y=Genus, x=log2FoldChange, color=Phylum)) + #play with aesthetics to make graph informative
@@ -1632,3 +1668,836 @@ for_moist <-ggplot(m, aes(FactorA, variable)) + #can use as.factor(FactorA) if d
   # scale_x_discrete(breaks=c(0,24.4, 50.3, 74.8, 98.3), labels=c("0" = "0", "24.4" ="25", "50.3" = "50", "74.8" = "75", "98.3" ="100")) + #optional, may want to add x-axis scale breaks
   ylab('Predictor Taxa') +
   xlab('Factor A') 
+
+#  Beta diversity ordinations and stats (Lab 11 and 12) ---------------------------------
+# ordinations in phyloseq: https://joey711.github.io/phyloseq/plot_ordination-examples.html
+
+## PCA  -----------------
+# currently, phyloseq doesn't run a PCA, but you can manually perform one using this tutorial: https://www.datacamp.com/community/tutorials/pca-analysis-r
+
+install.packages("devtools")
+library(devtools)
+
+install_github("vqv/ggbiplot") #takes a few minutes
+library(ggbiplot)
+
+# calculate the components
+clean.rar.pca <- prcomp(otu_table(clean.rar), center = TRUE, scale = TRUE) #CHANGE ME
+
+# take a look
+summary(clean.rar.pca) #CHANGE ME
+
+# graph it. add ggplot2 text to make it pretty
+ggbiplot(clean.rar.pca)
+
+clean.rar.sd = as(sample_data(clean.rar), "matrix")
+
+# USED IN MANUSCRIPT
+biplot = ggbiplot(pcobj = clean.rar.pca,
+                  #choices = c(1,2),
+                  #obs.scale = 1, var.scale = 1,  # Scaling of axis
+                  labels = row.names(clean.rar.sd),     # Add labels as rownames
+                  labels.size = 4,
+                  #varname.size = 5,
+                  #varname.abbrev = TRUE,  # Abbreviate variable names (TRUE)
+                  #var.axes = FALSE,      # Remove variable vectors (TRUE)
+                  circle = FALSE)       # Add unit variance circle (TRUE)
+                  #ellipse = TRUE, groups = data$type) # Adding ellipses
+print(biplot)
+
+
+## PCoA in phyloseq -----------------
+
+# use phyloseq to calculate ordination for use in the plot
+ord <- ordinate(clean.rar, #calculate similarities
+                   method ="PCoA", #ordination type
+                   "jaccard", binary = TRUE) #similarity type. Jaccard is binary, Bray can be binary (unweighted) or not (weighted) but is usually run as binary=FALSE.
+
+# simple ordination
+plot_ordination(clean.rar, ord, type="samples", color="Diet") #CHANGE ME but leave type as "samples"
+
+# fancy ordination
+library(ggplot2) # can add components on top of the phyloseq graph
+install.packages("viridis")
+library(viridis) #add a cool color palette
+
+plot_ordination(clean.rar, ord, type="samples") + #CHANGE ME
+  geom_point(aes(size = as.factor(Treatment), color=as.factor(Diet), shape=as.factor(Location))) + # resize the points based on a numeric factor, and make light/dark based on another factor
+  theme_minimal()+
+  scale_color_viridis(discrete = TRUE, option="A", begin = 0, end = 0.75) + #begin/end indicates where on the color scale to use, A refers to 'magma' color palette
+  stat_ellipse(aes(group=as.factor(Location), linetype=as.factor(Location))) + #add circles around a particular grouping, and make the circle lines different
+  labs(color = "Diet", shape = "Location", linetype="Location") #rename the headers in the legend
+
+
+## NMDS in phyloseq -----------------
+
+# use phyloseq to calculate ordination for use in the plot
+ord2 <- ordinate(clean.rar, #calculate similarities
+                    method ="NMDS", #ordination type
+                    "jaccard", binary = TRUE) #similarity type. Jaccard is binary, Bray can be binary (unweighted) or not (weighted) but is usually run as binary=FALSE.
+
+# report the amount of stress at the end of the NMDS calculation, as it is typical to report that in your manuscript. >0.2 is not great, and >0.3 plot is meaningless
+# Paste output here: Run 20 stress 9.04618e-05 #CHANGE ME
+
+# simple ordination
+plot_ordination(clean.rar, ord2, type="samples", color="Diet") #CHANGE ME but leave type as "samples"
+
+
+# fancy ordination
+library(ggplot2)
+install.packages("viridis")
+library(viridis) #add a cool color palette
+
+plot_ordination(clean.rar, ord2, type="samples", shape="Location") + #CHANGE ME
+  geom_point(aes(size = as.factor(Treatment), shape=as.factor(Location), color=as.factor(Diet), alpha = as.factor(Diet))) + # resize the points based on a numeric factor, and make light/dark based on another factor
+  scale_color_viridis(discrete = TRUE, option="A", begin = 0, end = 0.75) + #begin/end indicates where on the color scale to use, A refers to 'magma' color palette
+  stat_ellipse(aes(group=Diet, linetype=Location)) + #add circles around a particular grouping, and make the circle lines different
+  labs(color = "Diet", shape = "Location", linetype="Treatment") #rename the headers in the legend
+
+### ----- stats for ordinations --------
+# Code to use Vegan to calculation ordination data and run stats, in case phyloseq and vegan aren't sharing code well.
+# function and tutorial from https://rpubs.com/DKCH2020/587758
+library(vegan)
+
+veganotu = function(physeq) {
+  require("vegan")
+  OTU = otu_table(physeq)
+  if (taxa_are_rows(OTU)) {
+    OTU = t(OTU)
+  }
+  return(as(OTU, "matrix"))
+}
+# export data from phyloseq to vegan-compatible object
+vegan <- veganotu(clean.rar)
+
+# make a data frame that can be used in vegan from the sample_data in the phyloseq object
+sampledf <- data.frame(sample_data(clean.rar))
+
+# run the ordination calculation, change the variable name from EX_uJ to reflect the calculation method you choose (EX_wBC)
+uJ <- vegdist(wisconsin(sqrt(vegan)), method = "jaccard", binary=TRUE) #CHANGE ME to be the method and weighted (binary = false) or unweighted version (binary = true)
+
+# run betadispersion test to see how tight/loose the clusters are
+betadisp <- betadisper(uJ, sampledf$Diet) # CHANGE me so variable and factor reflect your data
+
+betadisp
+
+# paste output here
+# Homogeneity of multivariate dispersions
+
+# Call: betadisper(d = uJ, group = sampledf$Diet)
+# 
+# No. of Positive Eigenvalues: 19
+# No. of Negative Eigenvalues: 2
+# 
+# Average distance to median:
+#   HF     HG 
+# 0.4203 0.5033 
+# 
+# Eigenvalues for PCoA axes:
+#   (Showing 8 of 21 eigenvalues)
+# PCoA1  PCoA2  PCoA3  PCoA4  PCoA5  PCoA6  PCoA7  PCoA8 
+# 1.3383 0.6767 0.5469 0.4669 0.3994 0.3660 0.3128 0.2746 
+
+
+# run ANOVA to see if clusters overlap or not
+anova(betadisp)
+# paste output here
+# Analysis of Variance Table
+# 
+# Response: Distances
+# Df   Sum Sq  Mean Sq F value Pr(>F)
+# Groups     1 0.026622 0.026622  2.7539 0.1126
+# Residuals 20 0.193341 0.009667 
+
+
+permutest(betadisp)
+# paste output here
+
+# Permutation test for homogeneity of multivariate dispersions
+# Permutation: free
+# Number of permutations: 999
+# 
+# Response: Distances
+# Df   Sum Sq  Mean Sq      F N.Perm Pr(>F)
+# Groups     1 0.026622 0.026622 2.7539    999  0.121
+# Residuals 20 0.193341 0.009667 
+
+
+#  correct for multiple comparisons
+TukeyHSD(betadisp)
+# paste output here
+
+# Tukey multiple comparisons of means
+# 95% family-wise confidence level
+# 
+# Fit: aov(formula = distances ~ group, data = df)
+# 
+# $group
+# diff         lwr       upr     p adj
+# HG-HF 0.08300896 -0.02133216 0.1873501 0.1126158
+
+
+# Example basic permanova test using Adonis in vegan
+adonis(uJ ~ Diet * Treatment, as(sample_data(clean.rar), "data.frame"), permutations=9999, na.action=na.omit) #CHANGE ME so variable and factor reflect your data
+# paste output here
+
+# Df SumsOfSqs MeanSqs F.Model      R2 Pr(>F)    
+# Diet            1    1.1533 1.15327  5.2843 0.20620 0.0001 ***
+#   Treatment       1    0.2844 0.28437  1.3030 0.05084 0.1583    
+# Diet:Treatment  1    0.2270 0.22696  1.0399 0.04058 0.3880    
+# Residuals      18    3.9284 0.21824         0.70238           
+# Total          21    5.5930                 1.00000           
+# ---
+#   Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+# interpretation: The F-model/F statistic is a measure of importance, R2 may not be relvant for factorial data
+
+
+# Or, run a more complicated permanova test using Adonis in vegan if you have a complicated experimental design
+
+# if want to add repeated sampling use this line
+# ctrl <- with(as.data.frame(sample_data(clean.rar)), how(blocks = Lamb, nperm = 999))
+# 
+# adonis(EX_uJ ~ FactorA * as.numeric(FactorB) * as.numeric(FactorC) * FactorD, data = data.frame(sample_data(EX_ps_clean.rar)), # CHANGE ME so 'Factor' is the name of your Factor variables
+#        permutations = ctrl, #for repeated measures
+#        strata = as.data.frame(sample_data(EX_ps_clean.rar))$Blocking_factor) #for replicates/blocks
+
+### NOTE: if adonis is not working and says your data is of the wrong type:
+# 1) check to make sure you don't have NAs in what you are trying use
+# 2) update the data.table package, then reload the vegan package
+# 3) Repeat the ordination calculation by piping phyloseq directly to vegan, because they haven't been playing nicely since 2020 (who has, really?)
+#EX.ord_jac = phyloseq::distance(EX_ps_clean.rar, type="samples", "jaccard", binary=T) 
+# use that second ordination calculation style in adonis, basic permanova test using Adonis in vegan
+#adonis(EX.ord_jac ~ Diet * Week, as(sample_data(EX_ps_clean.rar), "data.frame"), permutations=9999, na.action=na.omit)
+
+
+
+
+## 3D scatterplot --------
+
+# Use the vegan3d package and any distance data to graph it in 3D
+# https://rdrr.io/cran/vegan3d/man/ordiplot3d.html
+install.packages('vegan3d')
+library(vegan3d)
+install.packages('scatterplot3d')
+library(scatterplot3d)
+# library(vegan)
+
+
+# basic version of the plot, using the object made in the Betadispersion section above
+ordiplot3d(uJ)
+
+
+
+# Beta diversity components (Lab 13) ---------------------------------
+
+# Component analysis perform ordination calculations on your sample data (metadata or environmental data) and on your sequence table data (SVs). Having missing or NA in the datasets may throw an error. Having outliers may distort the plots. 
+
+# optional, if you need to drop samples before creating the plots below, use this:
+# EX_ps_clean.rar_altered = subset_samples(EX_ps_clean.rar, Sample_type == "Mock") # CHANGE ME to the sample to drop
+# EX_ps_clean.rar_altered <- prune_taxa(taxa_sums(EX_ps_clean.rar_altered) > 0, EX_ps_clean.rar_altered)
+
+# optional, use this if you want to convert N/A in your metadata to something else
+# sample_data(EX_ps_clean.rar)$Factor[is.na(sample_data(EX_ps_clean.rar)$Factor)] <- "Something_else" # CHANGE ME so factor and replacement reflect the column you want to search through and what you want to replace NA with 
+
+
+## CCA in phyloseq -------------------------------------------
+# correspondence analysis, or optionally, constrained correspondence analysis (a.k.a. canonical correspondence analysis), usually used with bell-curve or unimodal relationships hypothesis-based testing does not need normally distributed data, but if you have a lot of outliers you may want to consider adding a data transformation.
+
+# first create a distance ordination. BE SURE THERE ARE NO NAs in your factorial data!! If you need to alter something, see the "beta diversity components" section.
+
+bray_not_na <- phyloseq::distance(physeq = clean.rar, method = "bray") #CHANGE ME
+
+cca_ord <- ordinate(
+  physeq = clean.rar, #CHANGE ME
+  method = "CCA",
+  distance = bray_not_na,
+  formula = ~ Diet + Treatment + Location  # CHANGE ME add factors
+  #Condition(SAMPLE_ID) #CHANGE ME use for repeated measures
+)
+
+cca_ord
+# paste the output here
+
+# Call: cca(formula = OTU ~ Diet + Treatment + Location, data = data)
+# 
+# Inertia Proportion Rank
+# Total          3.6632     1.0000     
+# Constrained    0.8152     0.2225    3
+# Unconstrained  2.8480     0.7775   18
+# Inertia is scaled Chi-square 
+# 
+# Eigenvalues for constrained axes:
+#   CCA1   CCA2   CCA3 
+# 0.6031 0.1187 0.0934 
+# 
+# Eigenvalues for unconstrained axes:
+#   CA1    CA2    CA3    CA4    CA5    CA6    CA7    CA8 
+# 0.7082 0.4917 0.4240 0.3157 0.2188 0.1583 0.1029 0.0823 
+# (Showing 8 of 18 unconstrained eigenvalues)
+
+# anova of whole model
+anova(cca_ord, permu=1000)
+# paste the output here    
+# Permutation test for cca under reduced model
+# Permutation: free
+# Number of permutations: 999
+# 
+# Model: cca(formula = OTU ~ Diet + Treatment + Location, data = data)
+# Df ChiSquare      F Pr(>F)    
+# Model     3   0.81522 1.7175  0.001 ***
+#   Residual 18   2.84801                  
+# ---
+#   Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+
+# anova of the factors (terms) you specified
+anova(cca_ord, by="terms", permu=1000)
+# Permutation test for cca under reduced model
+# Terms added sequentially (first to last)
+# Permutation: free
+# Number of permutations: 999
+# 
+# Model: cca(formula = OTU ~ Diet + Treatment + Location, data = data)
+# Df ChiSquare      F Pr(>F)    
+# Diet       1   0.58596 3.7034  0.001 ***
+#   Treatment  1   0.13041 0.8242  0.845    
+# Location   1   0.09885 0.6247  0.892    
+# Residual  18   2.84801                  
+# ---
+#   Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1         
+
+
+# cca plot with FACTORA in the model
+cca_plot <- plot_ordination(
+  physeq = clean.rar, #CHANGE ME
+  ordination = cca_ord, 
+  color = "Diet", #CHANGE ME
+  axes = c(1,2)) + 
+  theme_minimal() + #CHANGE ME
+  geom_point(aes(colour = Diet), size = 4) + #CHANGE ME
+  geom_point(colour = "grey90", size = 1.5) 
+
+
+
+# Now add the environmental variables as arrows
+arrowmat <- vegan::scores(cca_ord, display = "bp")
+
+# Add labels, make a data.frame
+arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
+
+# Define the arrow aesthetic mapping
+arrow_map <- aes(xend = CCA1, 
+                 yend = CCA2, 
+                 x = 0, 
+                 y = 0, 
+                 shape = NULL, 
+                 color = NULL, 
+                 label = labels)
+
+label_map <- aes(x = 1.3 * CCA1, 
+                 y = 1.3 * CCA2, 
+                 shape = NULL, 
+                 color = NULL, 
+                 label = labels)
+
+arrowhead = arrow(length = unit(0.02, "npc"))
+
+# Make a new graphic
+cca_plot + 
+  geom_segment(
+    mapping = arrow_map, 
+    size = .5, 
+    data = arrowdf, 
+    color = "gray", 
+    arrow = arrowhead
+  ) + 
+  geom_text(
+    mapping = label_map, 
+    size = 4,  
+    data = arrowdf, 
+    show.legend = FALSE
+  ) 
+
+
+
+
+## RDA in phyloseq -------------------------------------------
+# Redundancy analysis for linear relationships
+
+# first create a distance ordination. BE SURE THERE ARE NO NAs in your factorial data!! If you need to alter something, see the "beta diversity components" section.
+bray_not_na <- phyloseq::distance(physeq = clean.rar, method = "bray")
+
+rda_ord <- ordinate(
+  physeq = clean.rar, #CHANGEME
+  method = "RDA",
+  distance = bray_not_na,
+  # CHANGE ME add factors
+  #  #CHANGE ME use for repeated measures
+)
+
+rda_ord
+# paste the output here
+# Call: rda(X = veganifyOTU(physeq))
+# 
+# Inertia Rank
+# Total            1124     
+# Unconstrained    1124   21
+# Inertia is variance 
+# 
+# Eigenvalues for unconstrained axes:
+#   PC1   PC2   PC3   PC4   PC5   PC6   PC7   PC8 
+# 334.0 265.9 150.5 130.7  82.7  54.9  31.8  16.6 
+# (Showing 8 of 21 unconstrained eigenvalues)
+
+# anova of whole model
+anova(rda_ord, permu=1000)
+# paste the output here    
+# No constrained component
+# 
+# Model: rda(X = veganifyOTU(physeq))
+# Df Variance  F Pr(>F)
+# Model     0      0.0  0       
+# Residual 21   1124.5   
+
+# anova of the factors (terms) you specified
+anova(rda_ord, by="terms", permu=1000)
+# paste the output here              
+# No constrained component
+# 
+# Model: rda(X = veganifyOTU(physeq))
+# Df Variance  F Pr(>F)
+# Model     0      0.0  0       
+# Residual 21   1124.5     
+
+# rda plot with FACTORA in the model
+rda_plot <- plot_ordination(
+  physeq = clean.rar, #CHANGE ME
+  ordination = rda_ord, 
+  color = "Diet", #CHANGE ME
+  axes = c(1,2)) + 
+  theme_minimal() +
+  geom_point(aes(colour = Diet), size = 4) + #CHANGE ME
+  geom_point(colour = "grey90", size = 1.5) 
+
+
+
+# Now add the environmental variables as arrows
+arrowmat <- vegan::scores(rda_ord, display = "bp")
+
+# Add labels, make a data.frame
+arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
+
+# Define the arrow aesthetic mapping
+arrow_map <- aes(xend = RDA1, 
+                 yend = RDA2, 
+                 x = 0, 
+                 y = 0, 
+                 shape = NULL, 
+                 color = NULL, 
+                 label = labels)
+
+label_map <- aes(x = 1.3 * RDA1, 
+                 #y = 1.3 * RDA2, 
+                 shape = NULL, 
+                 color = NULL, 
+                 label = labels)
+
+arrowhead = arrow(length = unit(0.02, "npc"))
+
+# Make a new graphic # ERROR
+rda_plot + 
+  geom_segment(
+    mapping = arrow_map, 
+    size = .5, 
+    data = arrowdf, 
+    color = "gray", 
+    arrow = arrowhead
+  ) + 
+  geom_text(
+    mapping = label_map, 
+    size = 4,  
+    data = arrowdf, 
+    show.legend = FALSE
+  ) 
+
+
+
+## dbRDA in phyloseq -------------------------------------------
+# Constrained Analysis of Principal Coordinates or distance-based RDA, for non-linear relationships
+
+# first create a distance ordination. BE SURE THERE ARE NO NAs in your factorial data!! If you need to alter something, see the "beta diversity components" section.
+bray_not_na <- phyloseq::distance(physeq = EX_ps_clean.rar, method = "bray")
+
+cap_ord <- ordinate(
+  physeq = EX_ps_clean.rar, #CHANGEME
+  method = "CAP", #borrows capscale from the vegan package
+  distance = bray_not_na,
+  formula = ~ FACTORA + # CHANGE ME add factors
+    Condition(SAMPLE_ID) #CHANGE ME use for repeated measures
+)
+
+cap_ord
+# paste the output here
+
+# anova of whole model
+anova(cap_ord, permu=1000)
+# paste the output here    
+
+# anova of the factors (terms) you specified
+anova(cap_ord, by="terms", permu=1000)
+# paste the output here              
+
+
+# CAP plot with FACTORA in the model
+cap_plot <- plot_ordination(
+  physeq = EX_ps_clean.rar, #CHANGE ME
+  ordination = cap_ord, 
+  color = "FACTORA", #CHANGE ME
+  axes = c(1,2)) + 
+  theme_minimal() +
+  aes(shape = as.factor(FactorA)) + #CHANGE ME
+  geom_point(aes(colour = FACTORB), size = 4) + #CHANGE ME
+  geom_point(colour = "grey90", size = 1.5) 
+
+
+
+# Now add the environmental variables as arrows
+arrowmat <- vegan::scores(cap_ord, display = "bp")
+
+# Add labels, make a data.frame
+arrowdf <- data.frame(labels = rownames(arrowmat), arrowmat)
+
+# Define the arrow aesthetic mapping
+arrow_map <- aes(xend = CAP1, 
+                 yend = CAP2, 
+                 x = 0, 
+                 y = 0, 
+                 shape = NULL, 
+                 color = NULL, 
+                 label = labels)
+
+label_map <- aes(x = 1.3 * CAP1, 
+                 y = 1.3 * CAP2, 
+                 shape = NULL, 
+                 color = NULL, 
+                 label = labels)
+
+arrowhead = arrow(length = unit(0.02, "npc"))
+
+# Make a new graphic
+cap_plot + 
+  geom_segment(
+    mapping = arrow_map, 
+    size = .5, 
+    data = arrowdf, 
+    color = "gray", 
+    arrow = arrowhead
+  ) + 
+  geom_text(
+    mapping = label_map, 
+    size = 4,  
+    data = arrowdf, 
+    show.legend = FALSE
+  ) 
+
+
+
+## variance partitioning --------------
+# How much did any one factor contribute to the sample clustering?
+# http://www.hiercourse.com/docs/variationPartitioning.html 
+
+library(vegan)
+
+# create a dataframe from your SV table
+EX.df <- as.data.frame(otu_table(EX_ps_clean.rar))
+
+# extract your sample data from the phyloseq object
+env.df <- as.data.frame(sample_data(EX_ps_clean.rar))
+
+
+# calculate Principal Coordinates Of Neighborhood Matrix, diversity distance data transformed into rectangular format
+EX.pcnm <- pcnm(dist(bray_not_na))
+
+# environmental variables as predictors of community similarity
+cap.env <- capscale(EX.df ~ ., data=env.df, distance='bray')
+
+# calculate CCA 
+cap.pcnm <- capscale(EX.df ~ ., data=as.data.frame(scores(EX.pcnm)), distance='bray')
+
+
+# make a model using SV ordination and sample data
+mod0.env <- capscale(EX.df ~ 1, data=env.df, distance='bray') # add + Condition(SAMPLE_ID) for repeated measures
+
+# make a model using SV ordination and the component scores
+mod0.pcnm <- capscale(EX.df ~ 1, data=as.data.frame(scores(EX.pcnm)), distance='bray') # add + Condition(SAMPLE_ID) for repeated measures
+
+# select variables in each predictor table
+step.env <- ordistep(mod0.env, scope=formula(cap.env))
+
+# check variance inflation factors, higher number = data are redundant to another factor, 1= data are unique.  If factors are redundant (conflated) to each other (for example they basically report the same thing, go back and remove one and mention they were redundant/conflated in your manuscript Methods)
+vif.cca(step.env)
+
+
+step.pcnm <- ordistep(mod0.pcnm, scope=formula(cap.pcnm))
+
+step.env$anova
+# paste output here
+
+step.pcnm$anova
+# paste output here
+
+EX.pcnm.sub <- scores(EX.pcnm, 
+                      choices=c(1,3:16)) #CHANGE ME to include the significant pcnm numbers from previous command. If you want them all, write 1:16. to select only a few of them, write something like 1,3,6,7:9. 
+
+# partition variation among four predictor tables:
+EX.var <- varpart(EX.df, 
+                  ~ FACTORA, #CHANGE ME
+                  ~ FactorB, #CHANGE ME
+                  EX.pcnm.sub, data=env.df)
+
+#plot 
+par(mfrow=c(1, 2))
+showvarparts(4)
+plot(EX.var)
+
+
+
+EX.var
+# paste output here
+
+anova(rda(EX.df  ~ FACTORA + Condition(EX.pcnm.sub), data=env.df)) # add + Condition(env.df$SAMPLE_ID) for repeated measures
+# paste output here
+
+
+## Mantel test -------
+
+bray_not_na <- phyloseq::distance(physeq = EX_ps_clean.rar, method = "bray")
+
+# make a data frame that can be used in vegan from the sample_data in the phyloseq object
+meta.df <- data.frame(sample_data(EX_ps_clean.rar))
+
+bray.dist.meta <- vegdist(meta.df, method = "bray") #using scaled soil data
+
+bray.mantel <- mantel(bray_not_na, bray.dist.meta, permutations = 999)
+
+bray.mantel
+
+
+# Niche/neutral models (Lab 14)-----
+# can create functions around the L-K math, or try this package: https://github.com/AlmaasLab/micInt
+
+require('infotheo')
+require('matrixStats')
+require('magrittr')
+require('deSolve')
+require('igraph')
+library(dplyr)
+require('rlang')
+require('glue')
+require('viridis') # is a color palette so not critical to have
+require('RhpcBLASctl')
+library(ggplot2)
+require('ggfortify')
+
+install.packages("devtools")
+library(devtools)
+install_github("AlmaasLab/micInt")
+
+
+# Source tracking (Lab 15) -----
+# Source Tracker was developed for QIIME, and can identify samples which could be the “source” of the microbes in another community, called the “sink”. There was a version of the software coded for R, and the originak code and example files can be found here: https://github.com/danknights/sourcetracker.
+
+# IMPORTANT! I could not get the code to run following the walkthrough, until I went into the source code and hashed out all lines which rarefied the data. I made a modified version of SourceTracker.R to share with the class, and the rest of the code below  is a modified version of this walkthrough to go from phyloseq to sourcetracker in R: https://mgaley-004.github.io/MiSeq-Analysis/Tutorials/SourceSink.html 
+
+# download the SourceTracker_modified.R that Sue shared
+
+library(ape)
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(gplots)
+library(lme4)
+library(tidyr)
+library(vegan)
+library(scales)
+library(grid)
+library(reshape2)
+
+library(gridExtra)
+
+
+# need to grab the OTU_table (SV table) from your phyloseq object
+ex_seqtab <- as.data.frame(otu_table(EX_ps_clean))
+
+# take the taxa names from the tax_table and paste onto the colnames for the seqtab (otherwise they will just be the full sequences)
+# output phyloseq tax table as a dataframe to make it manipulable
+tax.df <- data.frame(tax_table(EX_ps_clean), stringsAsFactors=FALSE)
+
+## if the Genus is empty, replace with the Family
+tax.df$Genus[is.na(tax.df$Genus)] <- tax.df$Family[is.na(tax.df$Genus)]
+
+# bind Genus and Species together
+tax.df$Genus.species <- paste0(tax.df$Genus, "_", tax.df$Species)
+
+# set column of combined genus and species names as the column names for the predictors, replacing the full SV
+colnames(ex_seqtab) <- tax.df$Genus.species
+
+# go from dataframe format to sourcetracker preferred format
+ex_seqtab_st <- t(as.matrix(ex_seqtab))
+
+# grab the meta
+ex_meta <- as.data.frame(sample_data(EX_ps_clean))
+
+# create a column that indicates 'source' and 'sink' if you don't already have it in there
+ex_meta$SourceSink <- NA
+
+# designate week 0 as 'source' and weeks 1 and 2 as 'sinks' using and if/else statement. If Week matches 0, will add 'source' to the new column, otherwise it will add 'sink'
+ex_meta$SourceSink <-  ifelse(ex_meta$Week == "0", "source", "sink")
+
+# indicate which samples you think are the source (the donor) and which you think are the sink (the receiver)
+train.ix <- which(ex_meta$SourceSink=='source')
+test.ix <- which(ex_meta$SourceSink=='sink')
+
+envs <- ex_meta$Diet # usually a factor that indicates location 
+desc <- ex_meta$Diet # usually a factor that indicates location 
+
+# Change this line to reflect wherever you downloaded the modified sourcetracker code to
+source('C:/Users/sueis/OneDrive/Documents/Teaching/AVS 454-554 DNA Sequencing Analysis Lab/R/SourceTracker_modified.r')
+
+# tune the alpha values using cross-validation (this is slow! like very slow!) Use 0.001 if pressed for time. NOTE: I could not get this next command to work so I set my alpha values below.
+# tune.results <- tune.st(ex_seqtab_st[train.ix,], envs[train.ix])
+
+alpha1 <- 0.001 #tune.results$best.alpha1
+alpha2 <- 0.05 #tune.results$best.alpha2
+
+# Train sourcetracker using the source samples. Be unafraid of an error message that says ‘the condition has length > 1 and only the first element will be used.’ Seems to be an internal bug that doesn’t affect the outcome.
+st <- sourcetracker(ex_seqtab_st[train.ix,], envs[train.ix])
+
+#Estimate source proportions in sink samples.
+results <- predict(st,ex_seqtab_st[test.ix,], alpha1=alpha1, alpha2=alpha2)
+
+# This part validates the models we made using the original training data.
+results.train <- predict(st, alpha1=alpha1, alpha2=alpha2)
+
+# plot results with legend
+plot(results, type='pie', include.legend=TRUE)
+plot(results.train, type='pie', include.legend=TRUE)
+
+# Instead of using those plots, you can extract the results like so and then make all your plots in either base R or ggplot just like you’ve already learned to do.
+
+downstream <- data.frame(results$proportions)
+downstream$id <- row.names(downstream)
+meltdown <- melt(downstream, id.vars=c("id"))
+
+ex_meta
+
+## BOOKMARK did not finish fancying this up
+colnames(meltdown) <- c("Bacterial_SV", "Diet", "value")
+meltdown$Diet <- ex_meta[as.vector(meltdown$id), "Diet"]
+meltdown$Week <- ex_meta[as.vector(meltdown$id), "Week"]
+
+meltdown$Month <- as.factor(sapply(meltdown$Date, function(x) strsplit(x, "/")[[1]][1]))
+levels(meltdown$Month) <- c("June", "July", "August")
+meltdown$Day<- as.factor(sapply(meltdown$Date, function(x) strsplit(x, "/")[[1]][2]))
+
+meltdown$Rep <- as.factor(sapply(meltdown$id, function(x) strsplit(x, "_")[[1]][3]))
+levels(meltdown$Rep) <- c("A", "AA", "B")
+
+meltdown$Category <- as.factor(meltdown$Category)
+levels(meltdown$Category) <- c("B", "E")
+
+meltdown$SID <- as.factor(sapply(meltdown$id, function(x) strsplit(x, "_")[[1]][5]))
+
+meltdown$TypeRep <- paste(meltdown$Category, meltdown$Rep, meltdown$Day, sep=".")
+theme_set(theme_classic(base_size=10, base_family="Avenir"))
+
+ggplot(meltdown, aes(x=Week, y=value, fill=Diet)) + geom_bar(stat="identity") + facet_wrap(~Downstream.Site+Month, scales="free_x") + xlab("")
+
+
+
+
+
+
+
+
+
+
+# PiCRUST (Lab 16) -------
+
+# Tutorial and information here: https://github.com/picrust/picrust2/wiki
+# Can be run online or command line using python
+# working on an R workflow
+
+
+# 1. need a tab-delimited (tsv) version of the sequence table with samples as columns and SVs as rows
+
+# 2. need the SVs as a fasta formatted file
+
+# 3. use the tsv and the fasta file to run a local instance of picrust2 if you have mac or linux, can't be run locally on windows. 
+
+
+# Alternatively, BugBase can do broad phenotype predictors but must be run online: https://bugbase.cs.umn.edu/
+
+
+# Dendogram (Lab 17) ---------------------------------------
+## Note: I typically use the UPGMA algorothm for Dendograms when I make them as stand-alone.  Some other graph functions will intergrate dendograms themselves.
+
+#calculate dissimilarity based on your sequence data in base R
+dist.object <- dist(as.data.frame(otu_table(EX_ps_clean.rar)), method = "euclidean", diag = FALSE, upper = FALSE, p = 2) # method = "euclidean", "maximum", "manhattan", "canberra", "binary" or "minkowski"
+
+# cluster the dissimiliary info with base R: https://www.rdocumentation.org/packages/stats/versions/3.2.1/topics/hclust
+EX_ps.clust <- hclust(dist.object, method = "average", members = NULL) #method = average for UPGMA
+
+# visualization in phyloseq: https://bioconductor.org/packages/devel/bioc/vignettes/phyloseq/inst/doc/phyloseq-analysis.html#hierarchical-clustering
+plot(EX_ps.clust)
+
+
+# Phylogenetic Trees (Lab 17) ---------------------------------------
+# Tutorial to generate tree: https://f1000research.com/articles/5-1492/v2
+# Tutorial to view tree: https://web.stanford.edu/class/bios221/labs/phyloseq/lab_phyloseq.html
+
+library(dada2); packageVersion("dada2")
+library(phyloseq)
+library(DECIPHER)
+library(phangorn) #to build a tree
+library(ggplot2)
+
+# pull apart your phyloseq object. Note 03/2020: there can be formatting issues associated with this step, so online tutorial information may be out of date.  Adjust code as needed.
+
+seqtab <- as.data.frame(otu_table(EX_ps_clean.rar))
+taxtab <- as.data.frame(tax_table(EX_ps_clean.rar))
+meta <- as.data.frame(sample_data(EX_ps_clean.rar))
+
+# grab the SV data and name it
+# seqs <- getSequences(seqtab, collapse = FALSE, silence = TRUE) # NOTE: this code is from the tutorial and should pull the sequence data, but is currently broken for formatting issues. Instead use:
+seqs <- names(seqtab)
+names(seqs) <- seqs # This propagates to the tip labels of the tree
+
+# align the SVs
+alignment <- AlignSeqs(DNAStringSet(seqs), anchor=NA)
+
+# construct a neighbor-joining tree as the basis
+phang.align <- phyDat(as(alignment, "matrix"), type="DNA")
+dm <- dist.ml(phang.align)
+treeNJ <- NJ(dm) # Note, tip order != sequence order
+fit = pml(treeNJ, data=phang.align)
+
+## negative edges length changed to 0!
+
+fitGTR <- update(fit, k=4, inv=0.2)
+fitGTR <- optim.pml(fitGTR, model="GTR", optInv=TRUE, optGamma=TRUE,
+                    rearrangement = "stochastic", control = pml.control(trace = 0))
+detach("package:phangorn", unload=TRUE)
+
+# combine your tree with your current phyloseq object
+EX_ps_clean.rar <- merge_phyloseq(EX_ps_clean.rar, phy_tree(fitGTR$tree))
+
+# OPTIONAL: recombine and load your phyloseq object
+# EX_ps_clean.rar <- phyloseq(otu_table(seqtab, taxa_are_rows=FALSE), sample_data(meta), tax_table(taxtable), phy_tree(fitGTR$tree))
+
+# view your tree with phyloseq. add other ggplot2 components to make it pretty
+plot_tree(EX_ps_clean.rar, color="Genus", shape="FACTORA", size="FACTORB")
+
+plot_tree(EX_ps_clean.rar, color="SampleType", shape="Phylum", size="abundance")
+
